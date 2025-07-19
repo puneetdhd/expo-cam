@@ -10,18 +10,19 @@ import { Image } from "expo-image";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import Feather from "@expo/vector-icons/Feather";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
+import * as MediaLibrary from "expo-media-library";
 
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
+  const [storagePermission, requestStorage] = MediaLibrary.usePermissions();
+
   const ref = useRef<CameraView>(null);
   const [uri, setUri] = useState<string | null>(null);
   const [mode, setMode] = useState<CameraMode>("picture");
   const [facing, setFacing] = useState<CameraType>("back");
   const [recording, setRecording] = useState(false);
 
-  if (!permission) {
-    return null;
-  }
+  if (!permission) return null;
 
   if (!permission.granted) {
     return (
@@ -34,10 +35,38 @@ export default function App() {
     );
   }
 
-  const takePicture = async () => {
-    const photo = await ref.current?.takePictureAsync();
-    setUri(photo?.uri);
-  };
+const takePicture = async () => {
+  const photo = await ref.current?.takePictureAsync();
+  if (!photo?.uri) return;
+
+  setUri(photo.uri);
+
+  // Request only if permission not already granted
+  if (!storagePermission?.granted) {
+    const { granted } = await requestStorage();
+    if (!granted) {
+      console.warn("Storage permission not granted");
+      return;
+    }
+  }
+
+  try {
+    const asset = await MediaLibrary.createAssetAsync(photo.uri);
+
+    // OPTIONAL: add to album
+    let album = await MediaLibrary.getAlbumAsync("MyAppPhotos");
+    if (!album) {
+      album = await MediaLibrary.createAlbumAsync("MyAppPhotos", asset, false);
+    } else {
+      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+    }
+
+    console.log("Photo saved to gallery");
+  } catch (err) {
+    console.error("Failed to save photo:", err);
+  }
+};
+
 
   const recordVideo = async () => {
     if (recording) {
@@ -58,65 +87,57 @@ export default function App() {
     setFacing((prev) => (prev === "back" ? "front" : "back"));
   };
 
-  const renderPicture = () => {
-    return (
-      <View>
-        <Image
-          source={{ uri }}
-          contentFit="contain"
-          style={{ width: 300, aspectRatio: 1 }}
-        />
-        <Button onPress={() => setUri(null)} title="Take another picture" />
-      </View>
-    );
-  };
+  const renderPicture = () => (
+    <View>
+      <Image
+        source={{ uri }}
+        contentFit="contain"
+        style={{ width: 300, aspectRatio: 1 }}
+      />
+      <Button onPress={() => setUri(null)} title="Take another picture" />
+    </View>
+  );
 
-  const renderCamera = () => {
-    return (
-      <CameraView
-        style={styles.camera}
-        ref={ref}
-        mode={mode}
-        facing={facing}
-        mute={false}
-        responsiveOrientationWhenOrientationLocked
-      >
-        <View style={styles.shutterContainer}>
-          <Pressable onPress={toggleMode}>
-            {mode === "picture" ? (
-              <AntDesign name="picture" size={32} color="white" />
-            ) : (
-              <Feather name="video" size={32} color="white" />
-            )}
-          </Pressable>
-          <Pressable onPress={mode === "picture" ? takePicture : recordVideo}>
-            {({ pressed }) => (
+  const renderCamera = () => (
+    <CameraView
+      style={styles.camera}
+      ref={ref}
+      mode={mode}
+      facing={facing}
+      mute={false}
+      responsiveOrientationWhenOrientationLocked
+    >
+      <View style={styles.shutterContainer}>
+        <Pressable onPress={toggleMode}>
+          {mode === "picture" ? (
+            <AntDesign name="picture" size={32} color="white" />
+          ) : (
+            <Feather name="video" size={32} color="white" />
+          )}
+        </Pressable>
+        <Pressable onPress={mode === "picture" ? takePicture : recordVideo}>
+          {({ pressed }) => (
+            <View
+              style={[
+                styles.shutterBtn,
+                { opacity: pressed ? 0.5 : 1 },
+              ]}
+            >
               <View
                 style={[
-                  styles.shutterBtn,
-                  {
-                    opacity: pressed ? 0.5 : 1,
-                  },
+                  styles.shutterBtnInner,
+                  { backgroundColor: mode === "picture" ? "white" : "red" },
                 ]}
-              >
-                <View
-                  style={[
-                    styles.shutterBtnInner,
-                    {
-                      backgroundColor: mode === "picture" ? "white" : "red",
-                    },
-                  ]}
-                />
-              </View>
-            )}
-          </Pressable>
-          <Pressable onPress={toggleFacing}>
-            <FontAwesome6 name="rotate-left" size={32} color="white" />
-          </Pressable>
-        </View>
-      </CameraView>
-    );
-  };
+              />
+            </View>
+          )}
+        </Pressable>
+        <Pressable onPress={toggleFacing}>
+          <FontAwesome6 name="rotate-left" size={32} color="white" />
+        </Pressable>
+      </View>
+    </CameraView>
+  );
 
   return (
     <View style={styles.container}>
